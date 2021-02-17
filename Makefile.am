@@ -519,6 +519,12 @@ src_libdrivers_la_SOURCES += \
 	src/hardware/pipistrello-ols/protocol.c \
 	src/hardware/pipistrello-ols/api.c
 endif
+if HW_RASP_PICO_LOGIC
+src_libdrivers_la_SOURCES += \
+	src/hardware/rasp-pico-logic/protocol.h \
+	src/hardware/rasp-pico-logic/protocol.c \
+	src/hardware/rasp-pico-logic/api.c
+endif
 if HW_RDTECH_DPS
 src_libdrivers_la_SOURCES += \
 	src/hardware/rdtech-dps/protocol.h \
