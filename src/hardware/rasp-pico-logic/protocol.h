@@ -28,6 +28,12 @@
 #define LOG_PREFIX "rasp-pico-logic"
 
 struct dev_context {
+	uint64_t cur_samplerate;
+	uint64_t limit_samples;
+	uint64_t sent_samples;
+	uint64_t limit_msec;
+	uint64_t limit_frames;
+	int32_t num_logic_channels;
 };
 
 SR_PRIV int rasp_pico_logic_receive_data(int fd, int revents, void *cb_data);

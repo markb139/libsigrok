@@ -19,38 +19,182 @@
 
 #include <config.h>
 #include "protocol.h"
+#include <stdlib.h>
+#include <libsigrok/libsigrok.h>
+#include "libsigrok-internal.h"
+#include "scpi.h"
 
 static struct sr_dev_driver rasp_pico_logic_driver_info;
 
+static const char *manufacturers[] = {
+	"TinyUSB",
+};
+
+static const uint32_t scanopts[] = {
+	SR_CONF_NUM_LOGIC_CHANNELS,
+	SR_CONF_LIMIT_FRAMES,
+};
+
+static const uint32_t drvopts[] = {
+	SR_CONF_LOGIC_ANALYZER,
+	SR_CONF_OSCILLOSCOPE,
+};
+static const uint32_t devopts[] = {
+	SR_CONF_CONTINUOUS,
+	SR_CONF_LIMIT_SAMPLES | SR_CONF_GET | SR_CONF_SET,
+	SR_CONF_LIMIT_MSEC | SR_CONF_GET | SR_CONF_SET,
+	SR_CONF_LIMIT_FRAMES | SR_CONF_GET | SR_CONF_SET,
+	SR_CONF_SAMPLERATE | SR_CONF_GET | SR_CONF_SET | SR_CONF_LIST,
+	SR_CONF_TRIGGER_MATCH | SR_CONF_LIST,
+	SR_CONF_CAPTURE_RATIO | SR_CONF_GET | SR_CONF_SET,
+};
+static const int32_t trigger_matches[] = {
+	SR_TRIGGER_ZERO,
+	SR_TRIGGER_ONE,
+	SR_TRIGGER_RISING,
+	SR_TRIGGER_FALLING,
+	SR_TRIGGER_EDGE,
+};
+
+static const uint64_t samplerates[] = {
+	SR_HZ(1),
+	SR_GHZ(1),
+	SR_HZ(1),
+};
+
+static const uint32_t devopts_cg_logic[] = {
+	SR_CONF_PATTERN_MODE | SR_CONF_GET | SR_CONF_SET | SR_CONF_LIST,
+};
+
+static const uint32_t devopts_cg_analog_group[] = {
+	SR_CONF_AMPLITUDE | SR_CONF_GET | SR_CONF_SET,
+	SR_CONF_OFFSET | SR_CONF_GET | SR_CONF_SET,
+};
+
+static const uint32_t devopts_cg_analog_channel[] = {
+	SR_CONF_MEASURED_QUANTITY | SR_CONF_GET | SR_CONF_SET,
+	SR_CONF_PATTERN_MODE | SR_CONF_GET | SR_CONF_SET | SR_CONF_LIST,
+	SR_CONF_AMPLITUDE | SR_CONF_GET | SR_CONF_SET,
+	SR_CONF_OFFSET | SR_CONF_GET | SR_CONF_SET,
+};
+/* Note: No spaces allowed because of sigrok-cli. */
+static const char *logic_pattern_str[] = {
+	"sigrok",
+	"random",
+	"incremental",
+	"walking-one",
+	"walking-zero",
+	"all-low",
+	"all-high",
+	"squid",
+	"graycode",
+};
+static const char *analog_pattern_str[] = {
+	"square",
+	"sine",
+	"triangle",
+	"sawtooth",
+	"random",
+};
+
+static struct sr_dev_inst *probe_device(struct sr_scpi_dev_inst *scpi)
+{
+	struct sr_dev_inst *sdi;
+	struct dev_context *devc;
+	struct sr_scpi_hw_info *hw_info;
+	struct sr_channel *ch;
+	struct sr_channel_group *cg, *acg;
+	int i;
+	char channel_name[16];
+
+	int num_logic_channels;
+	num_logic_channels=8;
+	sdi = NULL;
+	devc = NULL;
+	hw_info = NULL;
+
+	if (sr_scpi_get_hw_id(scpi, &hw_info) != SR_OK) {
+		sr_info("Couldn't get IDN response.");
+		goto fail;
+	}
+
+	if (std_str_idx_s(hw_info->manufacturer, ARRAY_AND_SIZE(manufacturers)) < 0)
+	{
+		sr_dbg("couldn't get info");
+		goto fail;
+	}
+
+	sdi = g_malloc0(sizeof(struct sr_dev_inst));
+	sdi->vendor = g_strdup(hw_info->manufacturer);
+	sdi->model = g_strdup(hw_info->model);
+	sdi->version = g_strdup(hw_info->firmware_version);
+	sdi->serial_num = g_strdup(hw_info->serial_number);
+	sdi->driver = &rasp_pico_logic_driver_info;
+	sdi->inst_type = SR_INST_SCPI;
+	sdi->conn = scpi;
+	if (num_logic_channels > 0) {
+		/* Logic channels, all in one channel group. */
+		cg = g_malloc0(sizeof(struct sr_channel_group));
+		cg->name = g_strdup("Logic");
+		for (i = 0; i < num_logic_channels; i++) {
+			sprintf(channel_name, "D%d", i);
+			ch = sr_channel_new(sdi, i, SR_CHANNEL_LOGIC, TRUE, channel_name);
+			cg->channels = g_slist_append(cg->channels, ch);
+		}
+		sdi->channel_groups = g_slist_append(NULL, cg);
+	}
+
+	sr_scpi_hw_info_free(hw_info);
+	hw_info = NULL;
+
+	devc = g_malloc0(sizeof(struct dev_context));
+	sdi->priv = devc;
+
+	/*if (lecroy_xstream_init_device(sdi) != SR_OK)
+		goto fail;
+*/
+	return sdi;
+
+fail:
+	sr_scpi_hw_info_free(hw_info);
+	sr_dev_inst_free(sdi);
+	g_free(devc);
+
+	return NULL;
+}
+
+
 static GSList *scan(struct sr_dev_driver *di, GSList *options)
 {
-	struct drv_context *drvc;
-	GSList *devices;
-
-	(void)options;
-
-	devices = NULL;
-	drvc = di->context;
-	drvc->instances = NULL;
-
-	/* TODO: scan for devices, either based on a SR_CONF_CONN option
-	 * or on a USB scan. */
-
-	return devices;
+	sr_warn("SCAN");
+	return sr_scpi_scan(di->context, options, probe_device);
 }
 
 static int dev_open(struct sr_dev_inst *sdi)
 {
-	(void)sdi;
+	GSList *l;
+	
+	sr_warn("OPEN->");
+	if (sr_scpi_open(sdi->conn) != SR_OK)
+		return SR_ERR;
 
-	/* TODO: get handle from sdi->conn and open it. */
+	for (l = sdi->channels; l; l = l->next)
+	{
+		sr_dbg("channel 0x%08x",l);
+	}
 
+/*	if (lecroy_xstream_state_get(sdi) != SR_OK)
+		return SR_ERR;
+*/
+	sr_warn("OPEN<-");
 	return SR_OK;
+
 }
 
 static int dev_close(struct sr_dev_inst *sdi)
 {
 	(void)sdi;
+	sr_warn("CLOSE");
 
 	/* TODO: get handle from sdi->conn and close it. */
 
@@ -61,74 +205,160 @@ static int config_get(uint32_t key, GVariant **data,
 	const struct sr_dev_inst *sdi, const struct sr_channel_group *cg)
 {
 	int ret;
+	struct dev_context *devc;
+	sr_dbg("config_get 0x%08x",key);
+	if (!sdi)
+		return SR_ERR_ARG;
 
-	(void)sdi;
-	(void)data;
-	(void)cg;
-
-	ret = SR_OK;
+	devc = sdi->priv;
 	switch (key) {
-	/* TODO */
+	case SR_CONF_SAMPLERATE:
+		*data = g_variant_new_uint64(devc->cur_samplerate);
+		break;
+	case SR_CONF_LIMIT_SAMPLES:
+		*data = g_variant_new_uint64(devc->limit_samples);
+		break;
+	case SR_CONF_LIMIT_MSEC:
+		*data = g_variant_new_uint64(devc->limit_msec);
+		break;
+	case SR_CONF_LIMIT_FRAMES:
+		*data = g_variant_new_uint64(devc->limit_frames);
+		break;
 	default:
 		return SR_ERR_NA;
 	}
 
-	return ret;
+	return SR_OK;
+
 }
 
 static int config_set(uint32_t key, GVariant *data,
 	const struct sr_dev_inst *sdi, const struct sr_channel_group *cg)
 {
 	int ret;
+	struct dev_context *devc;
+	sr_dbg("config_set 0x%08x %d",key, data);
 
-	(void)sdi;
-	(void)data;
-	(void)cg;
+	devc = sdi->priv;
 
-	ret = SR_OK;
 	switch (key) {
-	/* TODO */
+	case SR_CONF_SAMPLERATE:
+		devc->cur_samplerate = g_variant_get_uint64(data);
+		break;
+	case SR_CONF_LIMIT_SAMPLES:
+		devc->limit_msec = 0;
+		devc->limit_samples = g_variant_get_uint64(data);
+		break;
+	case SR_CONF_LIMIT_MSEC:
+		devc->limit_msec = g_variant_get_uint64(data);
+		devc->limit_samples = 0;
+		break;
+	case SR_CONF_LIMIT_FRAMES:
+		devc->limit_frames = g_variant_get_uint64(data);
+		break;
 	default:
-		ret = SR_ERR_NA;
+		return SR_ERR_NA;
 	}
 
-	return ret;
+	return SR_OK;
+
 }
 
 static int config_list(uint32_t key, GVariant **data,
 	const struct sr_dev_inst *sdi, const struct sr_channel_group *cg)
 {
-	int ret;
+	sr_dbg("LIST 0x%0x", key);
+	struct sr_channel *ch;
 
-	(void)sdi;
-	(void)data;
-	(void)cg;
+	if (!cg) {
+		switch (key) {
+		case SR_CONF_SCAN_OPTIONS:
+		case SR_CONF_DEVICE_OPTIONS:
+			return STD_CONFIG_LIST(key, data, sdi, cg, scanopts, drvopts, devopts);
+		case SR_CONF_SAMPLERATE:
+			*data = std_gvar_samplerates_steps(ARRAY_AND_SIZE(samplerates));
+			break;
+		case SR_CONF_TRIGGER_MATCH:
+			*data = std_gvar_array_i32(ARRAY_AND_SIZE(trigger_matches));
+			break;
+		default:
+			return SR_ERR_NA;
+		}
+	} else {
+		ch = cg->channels->data;
+		switch (key) {
+		case SR_CONF_DEVICE_OPTIONS:
+			if (ch->type == SR_CHANNEL_LOGIC)
+				*data = std_gvar_array_u32(ARRAY_AND_SIZE(devopts_cg_logic));
+			else if (ch->type == SR_CHANNEL_ANALOG) {
+				if (strcmp(cg->name, "Analog") == 0)
+					*data = std_gvar_array_u32(ARRAY_AND_SIZE(devopts_cg_analog_group));
+				else
+					*data = std_gvar_array_u32(ARRAY_AND_SIZE(devopts_cg_analog_channel));
+			}
+			else
+				return SR_ERR_BUG;
+			break;
+		case SR_CONF_PATTERN_MODE:
+			/* The analog group (with all 4 channels) shall not have a pattern property. */
+			if (strcmp(cg->name, "Analog") == 0)
+				return SR_ERR_NA;
 
-	ret = SR_OK;
-	switch (key) {
-	/* TODO */
-	default:
-		return SR_ERR_NA;
+			if (ch->type == SR_CHANNEL_LOGIC)
+				*data = g_variant_new_strv(ARRAY_AND_SIZE(logic_pattern_str));
+			else if (ch->type == SR_CHANNEL_ANALOG)
+				*data = g_variant_new_strv(ARRAY_AND_SIZE(analog_pattern_str));
+			else
+				return SR_ERR_BUG;
+			break;
+		default:
+			return SR_ERR_NA;
+		}
 	}
+	sr_dbg("ok");
+	return SR_OK;
 
-	return ret;
 }
 
 static int dev_acquisition_start(const struct sr_dev_inst *sdi)
 {
-	/* TODO: configure hardware, reset acquisition state, set up
-	 * callbacks and send header packet. */
+	struct sr_channel *ch;
+	struct dev_context *devc;
+	struct sr_scpi_dev_inst *scpi;
 
-	(void)sdi;
 
-	return SR_OK;
+	sr_dbg("dev_acquisition_start->");
+
+	devc = sdi->priv;
+	scpi = sdi->conn;
+
+	ch = 0; //devc->current_channel->data;
+
+	sr_scpi_source_add(sdi->session, scpi, G_IO_IN, 50, rasp_pico_logic_receive_data, (void *)sdi);
+
+	std_session_send_df_header(sdi);
+
+	return sr_scpi_send(sdi->conn, "L:CAPTURE %d", devc->limit_samples);
 }
 
 static int dev_acquisition_stop(struct sr_dev_inst *sdi)
 {
-	/* TODO: stop acquisition. */
+	struct dev_context *devc;
+	struct sr_scpi_dev_inst *scpi;
+	sr_dbg("dev_acquisition_stop->");
 
-	(void)sdi;
+	std_session_send_df_end(sdi);
+	sr_dbg("A");
+	devc = sdi->priv;
+
+	/*devc->num_frames = 0;
+	g_slist_free(devc->enabled_channels);
+	devc->enabled_channels = NULL;
+	*/
+	scpi = sdi->conn;
+	sr_scpi_source_remove(sdi->session, scpi);
+
+	sr_dbg("dev_acquisition_stop<-");
 
 	return SR_OK;
 }
