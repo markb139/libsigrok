@@ -58,44 +58,20 @@ static const int32_t trigger_matches[] = {
 
 static const uint64_t samplerates[] = {
 	SR_HZ(1),
-	SR_GHZ(1),
+	SR_KHZ(1),
+	SR_KHZ(2),
+	SR_KHZ(10),
+	SR_KHZ(50),
+	SR_KHZ(100),
+	SR_KHZ(200),
+	SR_KHZ(500),
+	SR_MHZ(1),
+	SR_MHZ(10),
+	SR_MHZ(100),
 	SR_HZ(1),
 };
 
-static const uint32_t devopts_cg_logic[] = {
-	SR_CONF_PATTERN_MODE | SR_CONF_GET | SR_CONF_SET | SR_CONF_LIST,
-};
 
-static const uint32_t devopts_cg_analog_group[] = {
-	SR_CONF_AMPLITUDE | SR_CONF_GET | SR_CONF_SET,
-	SR_CONF_OFFSET | SR_CONF_GET | SR_CONF_SET,
-};
-
-static const uint32_t devopts_cg_analog_channel[] = {
-	SR_CONF_MEASURED_QUANTITY | SR_CONF_GET | SR_CONF_SET,
-	SR_CONF_PATTERN_MODE | SR_CONF_GET | SR_CONF_SET | SR_CONF_LIST,
-	SR_CONF_AMPLITUDE | SR_CONF_GET | SR_CONF_SET,
-	SR_CONF_OFFSET | SR_CONF_GET | SR_CONF_SET,
-};
-/* Note: No spaces allowed because of sigrok-cli. */
-static const char *logic_pattern_str[] = {
-	"sigrok",
-	"random",
-	"incremental",
-	"walking-one",
-	"walking-zero",
-	"all-low",
-	"all-high",
-	"squid",
-	"graycode",
-};
-static const char *analog_pattern_str[] = {
-	"square",
-	"sine",
-	"triangle",
-	"sawtooth",
-	"random",
-};
 
 static struct sr_dev_inst *probe_device(struct sr_scpi_dev_inst *scpi)
 {
@@ -148,6 +124,7 @@ static struct sr_dev_inst *probe_device(struct sr_scpi_dev_inst *scpi)
 	hw_info = NULL;
 
 	devc = g_malloc0(sizeof(struct dev_context));
+	devc->cur_samplerate = 1;
 	sdi->priv = devc;
 
 	/*if (lecroy_xstream_init_device(sdi) != SR_OK)
@@ -213,6 +190,7 @@ static int config_get(uint32_t key, GVariant **data,
 	devc = sdi->priv;
 	switch (key) {
 	case SR_CONF_SAMPLERATE:
+		sr_dbg("get sample rate %ld",devc->cur_samplerate);
 		*data = g_variant_new_uint64(devc->cur_samplerate);
 		break;
 	case SR_CONF_LIMIT_SAMPLES:
@@ -244,6 +222,7 @@ static int config_set(uint32_t key, GVariant *data,
 	switch (key) {
 	case SR_CONF_SAMPLERATE:
 		devc->cur_samplerate = g_variant_get_uint64(data);
+		sr_dbg("set sample rate %ld",devc->cur_samplerate);
 		break;
 	case SR_CONF_LIMIT_SAMPLES:
 		devc->limit_msec = 0;
@@ -267,10 +246,9 @@ static int config_set(uint32_t key, GVariant *data,
 static int config_list(uint32_t key, GVariant **data,
 	const struct sr_dev_inst *sdi, const struct sr_channel_group *cg)
 {
-	sr_dbg("LIST 0x%0x", key);
+	sr_dbg("config_list 0x%0x", key);
 	struct sr_channel *ch;
 
-	if (!cg) {
 		switch (key) {
 		case SR_CONF_SCAN_OPTIONS:
 		case SR_CONF_DEVICE_OPTIONS:
@@ -278,44 +256,15 @@ static int config_list(uint32_t key, GVariant **data,
 		case SR_CONF_SAMPLERATE:
 			*data = std_gvar_samplerates_steps(ARRAY_AND_SIZE(samplerates));
 			break;
+		case SR_CONF_LIMIT_SAMPLES:
+			*data = std_gvar_tuple_u64(1, 200000);
+			break;
 		case SR_CONF_TRIGGER_MATCH:
 			*data = std_gvar_array_i32(ARRAY_AND_SIZE(trigger_matches));
 			break;
 		default:
 			return SR_ERR_NA;
 		}
-	} else {
-		ch = cg->channels->data;
-		switch (key) {
-		case SR_CONF_DEVICE_OPTIONS:
-			if (ch->type == SR_CHANNEL_LOGIC)
-				*data = std_gvar_array_u32(ARRAY_AND_SIZE(devopts_cg_logic));
-			else if (ch->type == SR_CHANNEL_ANALOG) {
-				if (strcmp(cg->name, "Analog") == 0)
-					*data = std_gvar_array_u32(ARRAY_AND_SIZE(devopts_cg_analog_group));
-				else
-					*data = std_gvar_array_u32(ARRAY_AND_SIZE(devopts_cg_analog_channel));
-			}
-			else
-				return SR_ERR_BUG;
-			break;
-		case SR_CONF_PATTERN_MODE:
-			/* The analog group (with all 4 channels) shall not have a pattern property. */
-			if (strcmp(cg->name, "Analog") == 0)
-				return SR_ERR_NA;
-
-			if (ch->type == SR_CHANNEL_LOGIC)
-				*data = g_variant_new_strv(ARRAY_AND_SIZE(logic_pattern_str));
-			else if (ch->type == SR_CHANNEL_ANALOG)
-				*data = g_variant_new_strv(ARRAY_AND_SIZE(analog_pattern_str));
-			else
-				return SR_ERR_BUG;
-			break;
-		default:
-			return SR_ERR_NA;
-		}
-	}
-	sr_dbg("ok");
 	return SR_OK;
 
 }
@@ -338,6 +287,7 @@ static int dev_acquisition_start(const struct sr_dev_inst *sdi)
 
 	std_session_send_df_header(sdi);
 
+	sr_scpi_send(sdi->conn, "rate %d", devc->cur_samplerate);
 	return sr_scpi_send(sdi->conn, "L:CAPTURE %d", devc->limit_samples);
 }
 
