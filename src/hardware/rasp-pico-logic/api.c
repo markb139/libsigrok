@@ -58,17 +58,7 @@ static const int32_t trigger_matches[] = {
 
 static const uint64_t samplerates[] = {
 	SR_HZ(1),
-	SR_KHZ(1),
-	SR_KHZ(2),
-	SR_KHZ(10),
-	SR_KHZ(50),
-	SR_KHZ(100),
-	SR_KHZ(200),
-	SR_KHZ(500),
-	SR_MHZ(1),
-	SR_MHZ(10),
 	SR_MHZ(100),
-	SR_HZ(1),
 };
 
 
@@ -108,6 +98,7 @@ static struct sr_dev_inst *probe_device(struct sr_scpi_dev_inst *scpi)
 	sdi->driver = &rasp_pico_logic_driver_info;
 	sdi->inst_type = SR_INST_SCPI;
 	sdi->conn = scpi;
+	#if 1
 	if (num_logic_channels > 0) {
 		/* Logic channels, all in one channel group. */
 		cg = g_malloc0(sizeof(struct sr_channel_group));
@@ -119,7 +110,7 @@ static struct sr_dev_inst *probe_device(struct sr_scpi_dev_inst *scpi)
 		}
 		sdi->channel_groups = g_slist_append(NULL, cg);
 	}
-
+#endif
 	sr_scpi_hw_info_free(hw_info);
 	hw_info = NULL;
 
@@ -127,9 +118,6 @@ static struct sr_dev_inst *probe_device(struct sr_scpi_dev_inst *scpi)
 	devc->cur_samplerate = 1;
 	sdi->priv = devc;
 
-	/*if (lecroy_xstream_init_device(sdi) != SR_OK)
-		goto fail;
-*/
 	return sdi;
 
 fail:
@@ -160,9 +148,6 @@ static int dev_open(struct sr_dev_inst *sdi)
 		sr_dbg("channel 0x%08x",l);
 	}
 
-/*	if (lecroy_xstream_state_get(sdi) != SR_OK)
-		return SR_ERR;
-*/
 	sr_warn("OPEN<-");
 	return SR_OK;
 
@@ -170,12 +155,9 @@ static int dev_open(struct sr_dev_inst *sdi)
 
 static int dev_close(struct sr_dev_inst *sdi)
 {
-	(void)sdi;
-	sr_warn("CLOSE");
+	sr_dbg("CLOSE");
 
-	/* TODO: get handle from sdi->conn and close it. */
-
-	return SR_OK;
+	return sr_scpi_close(sdi->conn);
 }
 
 static int config_get(uint32_t key, GVariant **data,
@@ -274,13 +256,17 @@ static int dev_acquisition_start(const struct sr_dev_inst *sdi)
 	struct sr_channel *ch;
 	struct dev_context *devc;
 	struct sr_scpi_dev_inst *scpi;
-
-
+	GSList *l;
+	
 	sr_dbg("dev_acquisition_start->");
 
 	devc = sdi->priv;
 	scpi = sdi->conn;
-
+	for (l = sdi->channels; l; l = l->next)
+	{
+		ch = l->data;
+		sr_dbg("Channel %s %d",ch->name, ch->enabled);
+	}
 	ch = 0; //devc->current_channel->data;
 
 	sr_scpi_source_add(sdi->session, scpi, G_IO_IN, 50, rasp_pico_logic_receive_data, (void *)sdi);

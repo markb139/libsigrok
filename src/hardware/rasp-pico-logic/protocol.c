@@ -31,6 +31,7 @@ SR_PRIV int rasp_pico_logic_receive_data(int fd, int revents, void *cb_data)
 	char * resp;
 	int data_size;
 	int len;
+	int esr_value;
 
 	sr_dbg("rasp_pico_logic_receive_data->");
 	(void)fd;
@@ -51,6 +52,20 @@ SR_PRIV int rasp_pico_logic_receive_data(int fd, int revents, void *cb_data)
 	{
 		sr_err("failed to read OPC");
 		return SR_ERR;
+	}
+	if(sr_scpi_get_int(sdi->conn, "*ESR?", &esr_value) != SR_OK) {
+		sr_err("failed to read ESR");
+		sr_dev_acquisition_stop(sdi);
+		return SR_ERR;
+	}
+	else
+	{
+		sr_dbg("Current ESR 0x%08x", esr_value);
+		if(esr_value & 0x00000001) 
+		{
+			sr_dev_acquisition_stop(sdi);
+			return SR_ERR;
+		}
 	}
 	
 	if (sr_scpi_get_block(sdi->conn, "DATA?", &data) != SR_OK) {
