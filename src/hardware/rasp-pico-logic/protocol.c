@@ -19,6 +19,7 @@
 
 #include <config.h>
 #include "protocol.h"
+#include "scpi.h"
 
 SR_PRIV int rasp_pico_logic_receive_data(int fd, int revents, void *cb_data)
 {
@@ -27,13 +28,9 @@ SR_PRIV int rasp_pico_logic_receive_data(int fd, int revents, void *cb_data)
 	struct dev_context *devc;
 	struct sr_datafeed_packet packet;
 	struct sr_datafeed_logic logic;
-	char command[16];
-	char * resp;
-	int data_size;
-	int len;
+
 	int esr_value;
 
-	sr_dbg("rasp_pico_logic_receive_data->");
 	(void)fd;
 	
 	data = NULL;
@@ -53,29 +50,28 @@ SR_PRIV int rasp_pico_logic_receive_data(int fd, int revents, void *cb_data)
 		sr_err("failed to read OPC");
 		return SR_ERR;
 	}
-	if(sr_scpi_get_int(sdi->conn, "*ESR?", &esr_value) != SR_OK) {
+	
+	if(sr_scpi_get_int(sdi->conn, "*ESR?", &esr_value) != SR_OK) 
+	{
 		sr_err("failed to read ESR");
-		sr_dev_acquisition_stop(sdi);
+		sr_dev_acquisition_stop((struct sr_dev_inst *)sdi);
 		return SR_ERR;
 	}
 	else
 	{
-		sr_dbg("Current ESR 0x%08x", esr_value);
 		if(esr_value & 0x00000001) 
 		{
-			sr_dev_acquisition_stop(sdi);
+			sr_dev_acquisition_stop((struct sr_dev_inst *)sdi);
 			return SR_ERR;
 		}
 	}
-	
-	if (sr_scpi_get_block(sdi->conn, "DATA?", &data) != SR_OK) {
-		sr_dbg("rasp_pico_logic_receive_data A");
+
+	if (sr_scpi_get_block(sdi->conn, "DATA?", &data) != SR_OK) 
+	{
 		if (data)
 			g_byte_array_free(data, TRUE);
 		return TRUE;
 	}
-
-	sr_dbg("Data 0x%08x len %d", data, data->len);
 
 	logic.length=data->len;
 	logic.unitsize = 1;
@@ -90,15 +86,12 @@ SR_PRIV int rasp_pico_logic_receive_data(int fd, int revents, void *cb_data)
 	g_byte_array_free(data, TRUE);
 	if (devc->limit_samples > 0 && devc->sent_samples >= devc->limit_samples)
 	{
-		sr_dev_acquisition_stop(sdi);
+		sr_dev_acquisition_stop((struct sr_dev_inst *)sdi);
 	}
 	else
 	{
-		sr_dbg("getting more");
 		sr_scpi_send(sdi->conn, "L:CAPTURE %d", devc->limit_samples - devc->sent_samples);
 	}
 
-	
-	sr_dbg("rasp_pico_logic_receive_data<-");
 	return G_SOURCE_CONTINUE;
 }

@@ -69,7 +69,7 @@ static struct sr_dev_inst *probe_device(struct sr_scpi_dev_inst *scpi)
 	struct dev_context *devc;
 	struct sr_scpi_hw_info *hw_info;
 	struct sr_channel *ch;
-	struct sr_channel_group *cg, *acg;
+	struct sr_channel_group *cg;
 	int i;
 	char channel_name[16];
 
@@ -80,13 +80,13 @@ static struct sr_dev_inst *probe_device(struct sr_scpi_dev_inst *scpi)
 	hw_info = NULL;
 
 	if (sr_scpi_get_hw_id(scpi, &hw_info) != SR_OK) {
-		sr_info("Couldn't get IDN response.");
+		sr_err("Couldn't get IDN response.");
 		goto fail;
 	}
 
 	if (std_str_idx_s(hw_info->manufacturer, ARRAY_AND_SIZE(manufacturers)) < 0)
 	{
-		sr_dbg("couldn't get info");
+		sr_err("couldn't get info");
 		goto fail;
 	}
 
@@ -98,7 +98,7 @@ static struct sr_dev_inst *probe_device(struct sr_scpi_dev_inst *scpi)
 	sdi->driver = &rasp_pico_logic_driver_info;
 	sdi->inst_type = SR_INST_SCPI;
 	sdi->conn = scpi;
-	#if 1
+
 	if (num_logic_channels > 0) {
 		/* Logic channels, all in one channel group. */
 		cg = g_malloc0(sizeof(struct sr_channel_group));
@@ -110,7 +110,7 @@ static struct sr_dev_inst *probe_device(struct sr_scpi_dev_inst *scpi)
 		}
 		sdi->channel_groups = g_slist_append(NULL, cg);
 	}
-#endif
+
 	sr_scpi_hw_info_free(hw_info);
 	hw_info = NULL;
 
@@ -131,40 +131,37 @@ fail:
 
 static GSList *scan(struct sr_dev_driver *di, GSList *options)
 {
-	sr_warn("SCAN");
 	return sr_scpi_scan(di->context, options, probe_device);
 }
 
 static int dev_open(struct sr_dev_inst *sdi)
 {
-	GSList *l;
+	//GSList *l;
 	
-	sr_warn("OPEN->");
 	if (sr_scpi_open(sdi->conn) != SR_OK)
 		return SR_ERR;
 
+/*	
 	for (l = sdi->channels; l; l = l->next)
 	{
 		sr_dbg("channel 0x%08x",l);
 	}
-
-	sr_warn("OPEN<-");
+*/
 	return SR_OK;
 
 }
 
 static int dev_close(struct sr_dev_inst *sdi)
 {
-	sr_dbg("CLOSE");
-
 	return sr_scpi_close(sdi->conn);
 }
 
 static int config_get(uint32_t key, GVariant **data,
 	const struct sr_dev_inst *sdi, const struct sr_channel_group *cg)
 {
-	int ret;
 	struct dev_context *devc;
+	(void)cg;
+	
 	sr_dbg("config_get 0x%08x",key);
 	if (!sdi)
 		return SR_ERR_ARG;
@@ -172,7 +169,6 @@ static int config_get(uint32_t key, GVariant **data,
 	devc = sdi->priv;
 	switch (key) {
 	case SR_CONF_SAMPLERATE:
-		sr_dbg("get sample rate %ld",devc->cur_samplerate);
 		*data = g_variant_new_uint64(devc->cur_samplerate);
 		break;
 	case SR_CONF_LIMIT_SAMPLES:
@@ -195,16 +191,14 @@ static int config_get(uint32_t key, GVariant **data,
 static int config_set(uint32_t key, GVariant *data,
 	const struct sr_dev_inst *sdi, const struct sr_channel_group *cg)
 {
-	int ret;
 	struct dev_context *devc;
-	sr_dbg("config_set 0x%08x %d",key, data);
+	(void)cg;
 
 	devc = sdi->priv;
 
 	switch (key) {
 	case SR_CONF_SAMPLERATE:
 		devc->cur_samplerate = g_variant_get_uint64(data);
-		sr_dbg("set sample rate %ld",devc->cur_samplerate);
 		break;
 	case SR_CONF_LIMIT_SAMPLES:
 		devc->limit_msec = 0;
@@ -222,31 +216,27 @@ static int config_set(uint32_t key, GVariant *data,
 	}
 
 	return SR_OK;
-
 }
 
 static int config_list(uint32_t key, GVariant **data,
 	const struct sr_dev_inst *sdi, const struct sr_channel_group *cg)
 {
-	sr_dbg("config_list 0x%0x", key);
-	struct sr_channel *ch;
-
-		switch (key) {
-		case SR_CONF_SCAN_OPTIONS:
-		case SR_CONF_DEVICE_OPTIONS:
-			return STD_CONFIG_LIST(key, data, sdi, cg, scanopts, drvopts, devopts);
-		case SR_CONF_SAMPLERATE:
-			*data = std_gvar_samplerates_steps(ARRAY_AND_SIZE(samplerates));
-			break;
-		case SR_CONF_LIMIT_SAMPLES:
-			*data = std_gvar_tuple_u64(1, 200000);
-			break;
-		case SR_CONF_TRIGGER_MATCH:
-			*data = std_gvar_array_i32(ARRAY_AND_SIZE(trigger_matches));
-			break;
-		default:
-			return SR_ERR_NA;
-		}
+	switch (key) {
+	case SR_CONF_SCAN_OPTIONS:
+	case SR_CONF_DEVICE_OPTIONS:
+		return STD_CONFIG_LIST(key, data, sdi, cg, scanopts, drvopts, devopts);
+	case SR_CONF_SAMPLERATE:
+		*data = std_gvar_samplerates_steps(ARRAY_AND_SIZE(samplerates));
+		break;
+	case SR_CONF_LIMIT_SAMPLES:
+		*data = std_gvar_tuple_u64(1, 200000);
+		break;
+	case SR_CONF_TRIGGER_MATCH:
+		*data = std_gvar_array_i32(ARRAY_AND_SIZE(trigger_matches));
+		break;
+	default:
+		return SR_ERR_NA;
+	}
 	return SR_OK;
 
 }
@@ -258,8 +248,6 @@ static int dev_acquisition_start(const struct sr_dev_inst *sdi)
 	struct sr_scpi_dev_inst *scpi;
 	GSList *l;
 	
-	sr_dbg("dev_acquisition_start->");
-
 	devc = sdi->priv;
 	scpi = sdi->conn;
 	for (l = sdi->channels; l; l = l->next)
@@ -279,13 +267,10 @@ static int dev_acquisition_start(const struct sr_dev_inst *sdi)
 
 static int dev_acquisition_stop(struct sr_dev_inst *sdi)
 {
-	struct dev_context *devc;
+	//struct dev_context *devc = sdi->priv;
 	struct sr_scpi_dev_inst *scpi;
-	sr_dbg("dev_acquisition_stop->");
 
 	std_session_send_df_end(sdi);
-	sr_dbg("A");
-	devc = sdi->priv;
 
 	/*devc->num_frames = 0;
 	g_slist_free(devc->enabled_channels);
@@ -293,8 +278,6 @@ static int dev_acquisition_stop(struct sr_dev_inst *sdi)
 	*/
 	scpi = sdi->conn;
 	sr_scpi_source_remove(sdi->session, scpi);
-
-	sr_dbg("dev_acquisition_stop<-");
 
 	return SR_OK;
 }
