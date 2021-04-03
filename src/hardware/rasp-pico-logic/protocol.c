@@ -75,7 +75,7 @@ SR_PRIV int rasp_pico_logic_receive_data(int fd, int revents, void *cb_data)
 		return TRUE;
 	}
 
-	sr_dbg("Data 0x%08x %d %c", data, data->len, data->data[0]);
+	sr_dbg("Data 0x%08x len %d", data, data->len);
 
 	logic.length=data->len;
 	logic.unitsize = 1;
