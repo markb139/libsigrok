@@ -45,7 +45,8 @@ static const uint32_t devopts[] = {
 	SR_CONF_LIMIT_MSEC | SR_CONF_GET | SR_CONF_SET,
 	SR_CONF_LIMIT_FRAMES | SR_CONF_GET | SR_CONF_SET,
 	SR_CONF_SAMPLERATE | SR_CONF_GET | SR_CONF_SET | SR_CONF_LIST,
-	SR_CONF_TRIGGER_MATCH | SR_CONF_LIST,
+	SR_CONF_TRIGGER_MATCH | SR_CONF_LIST | SR_CONF_GET | SR_CONF_SET,
+	SR_CONF_TRIGGER_SOURCE  | SR_CONF_GET | SR_CONF_SET,
 	SR_CONF_CAPTURE_RATIO | SR_CONF_GET | SR_CONF_SET,
 };
 static const int32_t trigger_matches[] = {
@@ -162,7 +163,7 @@ static int config_get(uint32_t key, GVariant **data,
 	struct dev_context *devc;
 	(void)cg;
 	
-	sr_dbg("config_get 0x%08x",key);
+	sr_dbg("config_get %d",key);
 	if (!sdi)
 		return SR_ERR_ARG;
 
@@ -195,7 +196,8 @@ static int config_set(uint32_t key, GVariant *data,
 	(void)cg;
 
 	devc = sdi->priv;
-
+	sr_dbg("config_set %d", key);
+	
 	switch (key) {
 	case SR_CONF_SAMPLERATE:
 		devc->cur_samplerate = g_variant_get_uint64(data);
@@ -247,9 +249,39 @@ static int dev_acquisition_start(const struct sr_dev_inst *sdi)
 	struct dev_context *devc;
 	struct sr_scpi_dev_inst *scpi;
 	GSList *l;
+	GSList *l2;
+	struct sr_trigger *trigger;
+	struct sr_trigger_stage *stage;
+	struct sr_trigger_match * match;
+	uint8_t trg_ch=0;
+	uint8_t trg_type=0;
+	
+	/* Setup triggers */
+	if ((trigger = sr_session_trigger_get(sdi->session))) 
+	{
+		for (l = trigger->stages; l; l = l->next)
+		{
+			stage=l->data;
+			for (l2 = stage->matches; l2; l2 = l2->next)
+			{
+				match = l2->data;
+				sr_dbg("trigger name %s %s %d %d", trigger->name, match->channel->name, match->channel->index, match->match);
+				trg_ch = match->channel->index;
+				trg_type = match->match;
+			}
+		}
+	}
+/*
+ * 	SR_TRIGGER_ZERO = 1,
+	SR_TRIGGER_ONE,
+	SR_TRIGGER_RISING,
+	SR_TRIGGER_FALLING,
+	SR_TRIGGER_EDGE,
+*/
 	
 	devc = sdi->priv;
 	scpi = sdi->conn;
+	
 	for (l = sdi->channels; l; l = l->next)
 	{
 		ch = l->data;
@@ -262,6 +294,7 @@ static int dev_acquisition_start(const struct sr_dev_inst *sdi)
 	std_session_send_df_header(sdi);
 
 	sr_scpi_send(sdi->conn, "rate %d", devc->cur_samplerate);
+	sr_scpi_send(sdi->conn, "trig %d %d", trg_ch, trg_type);
 	return sr_scpi_send(sdi->conn, "L:CAPTURE %d", devc->limit_samples);
 }
 
@@ -269,6 +302,8 @@ static int dev_acquisition_stop(struct sr_dev_inst *sdi)
 {
 	//struct dev_context *devc = sdi->priv;
 	struct sr_scpi_dev_inst *scpi;
+
+	sr_dbg("dev_acquisition_stop");
 
 	std_session_send_df_end(sdi);
 
