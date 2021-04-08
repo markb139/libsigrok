@@ -31,38 +31,32 @@ static const char *manufacturers[] = {
 };
 
 static const uint32_t scanopts[] = {
-	SR_CONF_NUM_LOGIC_CHANNELS,
-	SR_CONF_LIMIT_FRAMES,
+	SR_CONF_NUM_LOGIC_CHANNELS
 };
 
 static const uint32_t drvopts[] = {
 	SR_CONF_LOGIC_ANALYZER,
-	SR_CONF_OSCILLOSCOPE,
 };
+
 static const uint32_t devopts[] = {
-	SR_CONF_CONTINUOUS,
 	SR_CONF_LIMIT_SAMPLES | SR_CONF_GET | SR_CONF_SET,
-	SR_CONF_LIMIT_MSEC | SR_CONF_GET | SR_CONF_SET,
-	SR_CONF_LIMIT_FRAMES | SR_CONF_GET | SR_CONF_SET,
 	SR_CONF_SAMPLERATE | SR_CONF_GET | SR_CONF_SET | SR_CONF_LIST,
-	SR_CONF_TRIGGER_MATCH | SR_CONF_LIST | SR_CONF_GET | SR_CONF_SET,
-	SR_CONF_TRIGGER_SOURCE  | SR_CONF_GET | SR_CONF_SET,
-	SR_CONF_CAPTURE_RATIO | SR_CONF_GET | SR_CONF_SET,
-};
+	SR_CONF_TRIGGER_MATCH | SR_CONF_GET | SR_CONF_SET | SR_CONF_LIST ,
+	SR_CONF_TRIGGER_SOURCE  | SR_CONF_GET | SR_CONF_SET
+	};
+
 static const int32_t trigger_matches[] = {
 	SR_TRIGGER_ZERO,
 	SR_TRIGGER_ONE,
 	SR_TRIGGER_RISING,
 	SR_TRIGGER_FALLING,
-	SR_TRIGGER_EDGE,
 };
 
 static const uint64_t samplerates[] = {
 	SR_HZ(1),
-	SR_MHZ(100),
+	SR_MHZ(125),
+	SR_HZ(1),
 };
-
-
 
 static struct sr_dev_inst *probe_device(struct sr_scpi_dev_inst *scpi)
 {
