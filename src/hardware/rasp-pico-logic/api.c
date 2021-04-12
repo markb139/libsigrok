@@ -30,6 +30,13 @@ static const char *manufacturers[] = {
 	"TinyUSB",
 };
 
+static const char *patterns[] = {
+	"None",
+	"Square",
+	"Count",
+	"Random",
+};
+
 static const uint32_t scanopts[] = {
 	SR_CONF_NUM_LOGIC_CHANNELS
 };
@@ -42,7 +49,8 @@ static const uint32_t devopts[] = {
 	SR_CONF_LIMIT_SAMPLES | SR_CONF_GET | SR_CONF_SET,
 	SR_CONF_SAMPLERATE | SR_CONF_GET | SR_CONF_SET | SR_CONF_LIST,
 	SR_CONF_TRIGGER_MATCH | SR_CONF_GET | SR_CONF_SET | SR_CONF_LIST ,
-	SR_CONF_TRIGGER_SOURCE  | SR_CONF_GET | SR_CONF_SET
+	SR_CONF_TRIGGER_SOURCE  | SR_CONF_GET | SR_CONF_SET,
+	SR_CONF_PATTERN_MODE | SR_CONF_GET | SR_CONF_SET | SR_CONF_LIST,
 	};
 
 static const int32_t trigger_matches[] = {
@@ -111,6 +119,7 @@ static struct sr_dev_inst *probe_device(struct sr_scpi_dev_inst *scpi)
 
 	devc = g_malloc0(sizeof(struct dev_context));
 	devc->cur_samplerate = 1;
+	devc->pattern = 0;
 	sdi->priv = devc;
 
 	return sdi;
@@ -155,7 +164,6 @@ static int config_get(uint32_t key, GVariant **data,
 	const struct sr_dev_inst *sdi, const struct sr_channel_group *cg)
 {
 	struct dev_context *devc;
-	(void)cg;
 	
 	sr_dbg("config_get %d",key);
 	if (!sdi)
@@ -175,6 +183,9 @@ static int config_get(uint32_t key, GVariant **data,
 	case SR_CONF_LIMIT_FRAMES:
 		*data = g_variant_new_uint64(devc->limit_frames);
 		break;
+	case SR_CONF_PATTERN_MODE:
+		*data = g_variant_new_string(patterns[devc->pattern]);
+		break;
 	default:
 		return SR_ERR_NA;
 	}
@@ -187,6 +198,9 @@ static int config_set(uint32_t key, GVariant *data,
 	const struct sr_dev_inst *sdi, const struct sr_channel_group *cg)
 {
 	struct dev_context *devc;
+	const char *stropt;
+	char * tmp_str;
+	
 	(void)cg;
 
 	devc = sdi->priv;
@@ -207,6 +221,19 @@ static int config_set(uint32_t key, GVariant *data,
 	case SR_CONF_LIMIT_FRAMES:
 		devc->limit_frames = g_variant_get_uint64(data);
 		break;
+	case SR_CONF_PATTERN_MODE:
+		stropt = g_variant_get_string(data, NULL);
+		for(int i=0;i<4;i++)
+		{
+			sr_dbg("Trying %d %s == %s",i, stropt,patterns[i]);
+			if(strcmp(stropt,patterns[i]) == 0)
+			{
+				devc->pattern = i;
+				sr_dbg("Found %d",i);
+				break;
+			}
+		}
+		break;
 	default:
 		return SR_ERR_NA;
 	}
@@ -218,20 +245,23 @@ static int config_list(uint32_t key, GVariant **data,
 	const struct sr_dev_inst *sdi, const struct sr_channel_group *cg)
 {
 	switch (key) {
-	case SR_CONF_SCAN_OPTIONS:
-	case SR_CONF_DEVICE_OPTIONS:
-		return STD_CONFIG_LIST(key, data, sdi, cg, scanopts, drvopts, devopts);
-	case SR_CONF_SAMPLERATE:
-		*data = std_gvar_samplerates_steps(ARRAY_AND_SIZE(samplerates));
-		break;
-	case SR_CONF_LIMIT_SAMPLES:
-		*data = std_gvar_tuple_u64(1, 200000);
-		break;
-	case SR_CONF_TRIGGER_MATCH:
-		*data = std_gvar_array_i32(ARRAY_AND_SIZE(trigger_matches));
-		break;
-	default:
-		return SR_ERR_NA;
+		case SR_CONF_SCAN_OPTIONS:
+		case SR_CONF_DEVICE_OPTIONS:
+			return STD_CONFIG_LIST(key, data, sdi, cg, scanopts, drvopts, devopts);
+		case SR_CONF_SAMPLERATE:
+			*data = std_gvar_samplerates_steps(ARRAY_AND_SIZE(samplerates));
+			break;
+		case SR_CONF_LIMIT_SAMPLES:
+			*data = std_gvar_tuple_u64(1, 200000);
+			break;
+		case SR_CONF_TRIGGER_MATCH:
+			*data = std_gvar_array_i32(ARRAY_AND_SIZE(trigger_matches));
+			break;
+		case SR_CONF_PATTERN_MODE:
+			*data = g_variant_new_strv(ARRAY_AND_SIZE(patterns));
+			break;
+		default:
+			return SR_ERR_NA;
 	}
 	return SR_OK;
 
@@ -265,13 +295,6 @@ static int dev_acquisition_start(const struct sr_dev_inst *sdi)
 			}
 		}
 	}
-/*
- * 	SR_TRIGGER_ZERO = 1,
-	SR_TRIGGER_ONE,
-	SR_TRIGGER_RISING,
-	SR_TRIGGER_FALLING,
-	SR_TRIGGER_EDGE,
-*/
 	
 	devc = sdi->priv;
 	scpi = sdi->conn;
@@ -287,6 +310,8 @@ static int dev_acquisition_start(const struct sr_dev_inst *sdi)
 
 	std_session_send_df_header(sdi);
 
+	sr_scpi_send(sdi->conn, "L:PAT %d", devc->pattern);
+		
 	sr_scpi_send(sdi->conn, "rate %d", devc->cur_samplerate);
 	sr_scpi_send(sdi->conn, "trig %d %d", trg_ch, trg_type);
 	return sr_scpi_send(sdi->conn, "L:CAPTURE %d", devc->limit_samples);
