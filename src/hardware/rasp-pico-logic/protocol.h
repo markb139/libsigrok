@@ -35,6 +35,7 @@ struct dev_context {
 	uint64_t limit_frames;
 	int32_t num_logic_channels;
 	uint16_t pattern;
+	float freq;
 };
 
 SR_PRIV int rasp_pico_logic_receive_data(int fd, int revents, void *cb_data);

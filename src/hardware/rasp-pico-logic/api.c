@@ -28,6 +28,7 @@ static struct sr_dev_driver rasp_pico_logic_driver_info;
 
 static const char *manufacturers[] = {
 	"TinyUSB",
+	"Rasp Pico Logic"
 };
 
 static const char *patterns[] = {
@@ -164,6 +165,7 @@ static int config_get(uint32_t key, GVariant **data,
 	const struct sr_dev_inst *sdi, const struct sr_channel_group *cg)
 {
 	struct dev_context *devc;
+	(void)cg;
 	
 	sr_dbg("config_get %d",key);
 	if (!sdi)
@@ -199,7 +201,6 @@ static int config_set(uint32_t key, GVariant *data,
 {
 	struct dev_context *devc;
 	const char *stropt;
-	char * tmp_str;
 	
 	(void)cg;
 
@@ -244,6 +245,8 @@ static int config_set(uint32_t key, GVariant *data,
 static int config_list(uint32_t key, GVariant **data,
 	const struct sr_dev_inst *sdi, const struct sr_channel_group *cg)
 {
+	(void)cg;
+	
 	switch (key) {
 		case SR_CONF_SCAN_OPTIONS:
 		case SR_CONF_DEVICE_OPTIONS:
