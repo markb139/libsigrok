@@ -30,6 +30,7 @@ SR_PRIV int rasp_pico_logic_receive_data(int fd, int revents, void *cb_data)
 	struct sr_datafeed_logic logic;
 
 	int esr_value;
+	gboolean opc_response;
 
 	(void)fd;
 	
@@ -45,53 +46,54 @@ SR_PRIV int rasp_pico_logic_receive_data(int fd, int revents, void *cb_data)
 		/* TODO */
 	}
 	
-	if(sr_scpi_get_opc(sdi->conn) != SR_OK)
+	if(sr_scpi_get_bool(sdi->conn,"*opc?", &opc_response) != SR_OK)
 	{
 		sr_err("failed to read OPC");
 		return SR_ERR;
 	}
-	
-	if(sr_scpi_get_int(sdi->conn, "*ESR?", &esr_value) != SR_OK) 
+	if(opc_response)
 	{
-		sr_err("failed to read ESR");
-		sr_dev_acquisition_stop((struct sr_dev_inst *)sdi);
-		return SR_ERR;
-	}
-	else
-	{
-		if(esr_value & 0x00000001) 
+		if(sr_scpi_get_int(sdi->conn, "*ESR?", &esr_value) != SR_OK) 
 		{
+			sr_err("failed to read ESR");
 			sr_dev_acquisition_stop((struct sr_dev_inst *)sdi);
 			return SR_ERR;
 		}
+		else
+		{
+			if(esr_value & 0x00000001) 
+			{
+				sr_dev_acquisition_stop((struct sr_dev_inst *)sdi);
+				return SR_ERR;
+			}
+		}
+
+		if (sr_scpi_get_block(sdi->conn, "DATA?", &data) != SR_OK) 
+		{
+			if (data)
+				g_byte_array_free(data, TRUE);
+			return TRUE;
+		}
+
+		logic.length=data->len;
+		logic.unitsize = 1;
+		logic.data = data->data;
+		
+		devc->sent_samples += data->len;
+
+		packet.payload = &logic;
+		packet.type = SR_DF_LOGIC;
+		sr_session_send(sdi, &packet);
+
+		g_byte_array_free(data, TRUE);
+		if (devc->limit_samples > 0 && devc->sent_samples >= devc->limit_samples)
+		{
+			sr_dev_acquisition_stop((struct sr_dev_inst *)sdi);
+		}
+		else
+		{
+			sr_scpi_send(sdi->conn, "L:CAPTURE %d", devc->limit_samples - devc->sent_samples);
+		}
 	}
-
-	if (sr_scpi_get_block(sdi->conn, "DATA?", &data) != SR_OK) 
-	{
-		if (data)
-			g_byte_array_free(data, TRUE);
-		return TRUE;
-	}
-
-	logic.length=data->len;
-	logic.unitsize = 1;
-	logic.data = data->data;
-	
-	devc->sent_samples += data->len;
-
-	packet.payload = &logic;
-	packet.type = SR_DF_LOGIC;
-	sr_session_send(sdi, &packet);
-
-	g_byte_array_free(data, TRUE);
-	if (devc->limit_samples > 0 && devc->sent_samples >= devc->limit_samples)
-	{
-		sr_dev_acquisition_stop((struct sr_dev_inst *)sdi);
-	}
-	else
-	{
-		sr_scpi_send(sdi->conn, "L:CAPTURE %d", devc->limit_samples - devc->sent_samples);
-	}
-
 	return G_SOURCE_CONTINUE;
 }
